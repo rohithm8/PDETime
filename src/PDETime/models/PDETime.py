@@ -1,3 +1,4 @@
+from torch import roll
 import torch.nn as nn
 from src.PDETime.models.encoder import Encoder
 from src.PDETime.models.solver import Solver
@@ -52,4 +53,20 @@ class PDETime(nn.Module):
         tau = self.encoder(tau, x, t)
         tau = self.solver(tau)
         target = self.decoder(tau, x)
-        return target#.squeeze(-1)
+        return target
+    
+
+class PDETimeLoss(nn.Module):
+    def __init__(self, loss_fn, lookback, horizon):
+        super().__init__()
+        self.loss_fn = loss_fn
+        self.lookback = lookback
+        self.horizon = horizon
+    def forward(self, outputs, labels):
+        fo_diff = outputs - roll(outputs, 1, dims=-2)
+        fo_diff_labels = labels - roll(labels, 1, dims=-2)
+        x_tau_0 = outputs[:,self.lookback-1,:].unsqueeze(-2).repeat(1, self.horizon + self.lookback, 1)
+        L_r = self.loss_fn(outputs[:,:-self.horizon,:], labels[:,:-self.horizon,:]) / (self.lookback/self.horizon)
+        L_p = self.loss_fn(outputs[:,-self.horizon:,:], labels[:,-self.horizon:,:] - x_tau_0[:,-self.horizon:,:])
+        L_f = self.loss_fn(fo_diff[:,-self.horizon:,:], fo_diff_labels[:,-self.horizon:,:])
+        return L_r + L_p + L_f
