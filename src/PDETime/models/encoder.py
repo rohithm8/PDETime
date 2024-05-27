@@ -9,6 +9,18 @@ from typing import List, Tuple, Optional
 
 
 class SineLayer(nn.Module):
+    """
+    A custom PyTorch module that applies a sine activation function to the output of a linear layer.
+    
+    Args:
+        in_features (int): Number of input features.
+        out_features (int): Number of output features.
+        bias (bool, optional): If set to False, the linear layer will not learn an additive bias. Default is True.
+        is_first (bool, optional): If set to True, initializes the weights of the linear layer with a uniform distribution 
+                                  between -1/in_features and 1/in_features. Default is False.
+        omega_0 (float, optional): Frequency parameter for the sine activation function. Default is 30.
+    """
+    
     def __init__(self, in_features, out_features, bias=True,
                  is_first=False, omega_0=30):
         super().__init__()
@@ -22,6 +34,22 @@ class SineLayer(nn.Module):
         self.init_weights()
     
     def init_weights(self):
+        """
+        Initializes the weights of the linear layer.
+
+        This method initializes the weights of the linear layer based on the specified
+        initialization strategy. If it is the first layer, the weights are initialized
+        uniformly between -1/in_features and 1/in_features. Otherwise, the weights are
+        initialized uniformly between -sqrt(6/in_features)/omega_0 and sqrt(6/in_features)/omega_0.
+
+        Note:
+            - This method modifies the weights of the linear layer in-place.
+            - The initialization strategy depends on the values of `is_first`, `in_features`,
+              and `omega_0` attributes.
+
+        Returns:
+            None
+        """
         with torch.no_grad():
             if self.is_first:
                 self.linear.weight.uniform_(-1 / self.in_features, 
@@ -31,10 +59,32 @@ class SineLayer(nn.Module):
                                              np.sqrt(6 / self.in_features) / self.omega_0)
         
     def forward(self, input):
+        """
+        Applies the sine activation function to the output of the linear layer.
+        
+        Args:
+            input (torch.Tensor): Input tensor of shape (batch_size, in_features).
+        
+        Returns:
+            torch.Tensor: Output tensor of shape (batch_size, out_features) after applying the sine activation function.
+        """
         return torch.sin(self.omega_0 * self.linear(input))
     
     
 class Siren(nn.Module):
+    """
+    Siren (Sinusoidal Representation Network) module.
+    
+    Args:
+        in_features (int): Number of input features.
+        hidden_features (int): Number of hidden features.
+        hidden_layers (int): Number of hidden layers.
+        out_features (int): Number of output features.
+        outermost_linear (bool, optional): Whether the final layer is a linear layer. Defaults to False.
+        first_omega_0 (float, optional): Frequency of the first layer. Defaults to 30.
+        hidden_omega_0 (float, optional): Frequency of the hidden layers. Defaults to 30.
+    """
+    
     def __init__(self, in_features, hidden_features, hidden_layers, out_features, outermost_linear=False, 
                  first_omega_0=30, hidden_omega_0=30.):
         super().__init__()
@@ -60,13 +110,17 @@ class Siren(nn.Module):
                                       is_first=False, omega_0=hidden_omega_0))
         
         self.net = nn.Sequential(*self.net)
-    
-    # def forward(self, coords):
-    #     coords = coords.clone().detach().requires_grad_(True) # allows to take derivative w.r.t. input
-    #     output = self.net(coords)
-    #     return output#, coords
 
     def forward(self, x):
+        """
+        Forward pass of the Siren module.
+        
+        Args:
+            x (torch.Tensor): Input tensor.
+        
+        Returns:
+            torch.Tensor: Output tensor.
+        """
         return self.net(x)
 
 
@@ -78,8 +132,6 @@ def sample_b(s: float, size: tuple) -> Tensor:
     Args:
         s (float): standard deviation
         size (tuple): size of the matrix sampled
-
-    See :class:`~rff.layers.GaussianEncoding` for more details
     """
     return torch.randn(size) * (2 ** s)
 
@@ -96,8 +148,6 @@ def fourier_encoding(
 
     Returns:
         Tensor: mapped tensor of shape :math:`(N, *, 2 \cdot \text{encoded_layer_size})`
-
-    See :class:`~rff.layers.GaussianEncoding` for more details.
     """
     vp = 2 * np.pi * v @ b.T
     return torch.cat((torch.cos(vp), torch.sin(vp)), dim=-1)
