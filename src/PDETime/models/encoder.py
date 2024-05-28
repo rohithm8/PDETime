@@ -154,27 +154,44 @@ def fourier_encoding(
 
 
 class CFF(nn.Module):
-    """Layer for mapping coordinates using random concatenated Fourier features"""
+    """
+    Layer for mapping coordinates using random Concatenated Fourier Features.
+
+    Args:
+        s (int): number of random Fourier features to create per input feature
+        in_features (int): the number of input dimensions
+        encoded_size (int): the number of dimensions the `b` matrix maps to
+
+    Raises:
+        ValueError:
+            If `s`, `in_features`, or `encoded_size` is not provided.
+
+    Attributes:
+        s (int): number of random Fourier features to create per input feature
+
+    Methods:
+        forward(v: Tensor) -> Tensor:
+            Computes the mapping using random Fourier features.
+
+    """
 
     def __init__(self, s: int = None,
                  in_features: int = None,
                  encoded_size: int = None):
-        r"""
+        """
+        Initializes a CFF layer.
+
         Args:
             s (int): number of random Fourier features to create per input feature
-            input_size (int): the number of input dimensions
+            in_features (int): the number of input dimensions
             encoded_size (int): the number of dimensions the `b` matrix maps to
+
         Raises:
             ValueError:
-                If :attr:`b` is provided and one of :attr:`sigma`, :attr:`input_size`,
-                or :attr:`encoded_size` is provided. If :attr:`b` is not provided and one of
-                :attr:`sigma`, :attr:`input_size`, or :attr:`encoded_size` is not provided.
+                If `s`, `in_features`, or `encoded_size` is not provided.
         """
         super().__init__()
         self.s = s
-        if s is None or in_features is None or encoded_size is None:
-            raise ValueError(
-                'Arguments "sigma," "input_size," and "encoded_size" are required.')
 
         b_s = [sample_b(s_i, (encoded_size, in_features)) for s_i in range(1,s+1)]
 
@@ -182,20 +199,41 @@ class CFF(nn.Module):
              self.register_buffer('b'+str(i+1), b)
 
     def forward(self, v: Tensor) -> Tensor:
-        r"""Computes :math:`\gamma(\mathbf{v}) = (\cos{2 \pi \mathbf{B} \mathbf{v}} , \sin{2 \pi \mathbf{B} \mathbf{v}})`
+        """
+        Computes the mapping using random Fourier features.
 
         Args:
-            v (Tensor): input tensor of shape :math:`(N, *, \text{input_size})`
+            v (Tensor): input tensor of shape `(N, *, input_size)`
 
         Returns:
-            Tensor: Tensor mapping using random fourier features of shape :math:`(N, *, 2 \cdot \text{encoded_size})`
+            Tensor: Tensor mapping using random fourier features of shape `(N, *, 2 * encoded_size)`
         """
         ff = [fourier_encoding(v, getattr(self, 'b'+str(i+1))) for i in range(self.s)]
         return torch.cat(ff, dim=-1)
 
 
 class Tau_INR(nn.Module):
-    """Implicit Neural Representation with concatenated Fourier features for time index feature"""
+    """
+        Implicit Neural Representation with concatenated Fourier features for time index feature
+
+    Args:
+        in_features (int): Number of input features.
+        hidden_features (int): Number of hidden features.
+        s_cff (int): Scaling factor for CFF.
+        num_layers (int): Number of layers in the network.
+        out_features (int): Number of output features.
+
+    Raises:
+        ValueError: If `hidden_features` is not divisible by 2.
+
+    Attributes:
+        net (nn.Sequential): Sequential neural network module.
+
+    Methods:
+        forward(tau): Performs forward pass through the network.
+
+    """
+
     def __init__(self, in_features, hidden_features, s_cff, num_layers, out_features):
         super().__init__()
         if hidden_features % 2 != 0:
@@ -214,10 +252,29 @@ class Tau_INR(nn.Module):
         self.net = nn.Sequential(*self.net).float()
     
     def forward(self, tau):
+        """
+        Forward pass through the network
+
+        Args:
+            tau (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+
+        """
         return self.net(tau)
 
 
 class CrossAttention(nn.Module):
+    """
+    CrossAttention module performs cross-attention operation between two input tensors.
+
+    Args:
+        input_dim (int): The length of the input tensors.
+        kq_dim (int): The length of the keys and queries.
+        output_dim (int): The length of the output tensor.
+    """
+    
     def __init__(self, input_dim, kq_dim, output_dim):
         super().__init__()
         self.d_out_kq = kq_dim
@@ -226,18 +283,62 @@ class CrossAttention(nn.Module):
         self.W_v = nn.Linear(input_dim, output_dim)
     
     def forward(self, x_1, x_2):
+        """
+        Forward pass of the CrossAttention module.
+
+        Args:
+            x_1 (torch.Tensor): The first input tensor.
+            x_2 (torch.Tensor): The second input tensor.
+        
+        Returns:
+            torch.Tensor: The output tensor after cross-attention operation.
+        """
         queries_1 = self.W_q(x_1)
         keys_2 = self.W_k(x_2)
         values_2 = self.W_v(x_2)
-        attn_scores=queries_1.matmul(keys_2.mT)
-        attn_weights=torch.softmax(
-            attn_scores/self.d_out_kq**0.5, dim=-1
+        attn_scores = queries_1.matmul(keys_2.mT)
+        attn_weights = torch.softmax(
+            attn_scores / self.d_out_kq ** 0.5, dim=-1
         )
         
         return attn_weights.matmul(values_2)
 
 
 class AggLayer(nn.Module):
+    """
+    AggLayer is a module that performs aggregation operations on input tensors.
+    Note attributes with single letter names are the same as the paper.
+    TODO: Rename these attributes to more descriptive names.
+
+    Args:
+        latent_features (int): The number of latent features.
+        temporal_latent_features (int): The number of temporal latent features.
+        spatial_dim (int): The spatial dimension.
+        lookback (int): The lookback value.
+        horizon (int): The horizon value.
+        attn_dim (int): The attention dimension.
+
+    Attributes:
+        D (int): number of latent features in the representation of tau (time index).
+        T (int): number of temporal latent features.
+        L (int): lookback length.
+        H (int): horizon length.
+        C (int): number of channels in time series data.
+        attn_dim (int): dimension of the key and query matricies in the attention module.
+        tau_linear (nn.Linear): Linear layer for tau.
+        t_linear (nn.Linear): Linear layer for t.
+        x_linear (nn.Linear): Linear layer for x.
+        gelu (nn.GELU): GELU activation function.
+        tau_norm_1 (nn.LayerNorm): Layer normalization for tau.
+        t_norm_1 (nn.LayerNorm): Layer normalization for t.
+        x_norm_1 (nn.LayerNorm): Layer normalization for x.
+        attention (CrossAttention): CrossAttention module.
+        tau_norm_2 (nn.LayerNorm): Layer normalization for tau.
+        t_tau_linear (nn.Linear): Linear layer for concatenating t and tau.
+        tau_norm_3 (nn.LayerNorm): Layer normalization for tau.
+
+    """
+
     def __init__(self,
                  latent_features,
                  temporal_latent_features,
@@ -269,6 +370,18 @@ class AggLayer(nn.Module):
 
 
     def forward(self, tau, t, x):
+        """
+        Forward pass of the AggLayer module.
+
+        Args:
+            tau (torch.Tensor): Input tensor for the Implicit Neural Representation (INR) of tau, the time index.
+            t (torch.Tensor): Input tensor for the INR of t, the temporal features.
+            x (torch.Tensor): Input tensor for the INR of x, the historical data.
+
+        Returns:
+            torch.Tensor: Output tensor.
+
+        """
         tau = self.tau_linear(tau)
         t = self.t_linear(t)
         x = self.x_linear(x)
@@ -283,6 +396,25 @@ class AggLayer(nn.Module):
 
 
 class Encoder(nn.Module):
+    """
+    Encoder module for PDETime model.
+
+    Args:
+        spatial_dim (int): Dimension of the historical features.
+        temporal_features (int): Dimension of temporal features.
+        temporal_latent_features (int): Number of temporal latent features.
+        lookback (int): Number of time steps to look back.
+        horizon (int): Number of time steps to predict into the future.
+        s_cff (float): Number of random Fourier features to create per timestep.
+        hidden_features (int): Number of hidden features in any MLPs.
+        INR_layers (int): Number of layers in the INR (Implicit Neural Representation) module.
+        aggregation_layers (int): Number of aggregation layers.
+        latent_features (int): Number of latent features after encoding.
+        outermost_linear (bool): Whether to include an outermost linear layer. Default is False.
+        first_omega_0 (int): Frequency parameter for the first layer of Siren. Default is 30.
+        hidden_omega_0 (float): Frequency parameter for the hidden layers of Siren. Default is 30.0.
+    """
+
     def __init__(self,
                  spatial_dim,
                  temporal_features,
@@ -350,7 +482,19 @@ class Encoder(nn.Module):
             ]
         
         self.agg_layers *= aggregation_layers
+
     def forward(self, tau, x, t):
+        """
+        Forward pass of the Encoder module.
+
+        Args:
+            tau (torch.Tensor): Input tensor for tau, the time index.
+            t (torch.Tensor): Input tensor for t, the temporal features.
+            x (torch.Tensor): Input tensor for x, the historical data.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
         tau = self.tau_INR(tau.unsqueeze(-1))
         x = self.x_siren(torch.transpose(x, 1, 2))
         t = self.t_siren(t)
