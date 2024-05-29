@@ -8,7 +8,7 @@ class PDETime(nn.Module):
     """
     PDETime model for solving long-term multivariate time series forecasting problems.    
     Args:
-        spatial_dim (int): The number of non-time-index dimensionsin the time series.
+        spatial_dim (int): The number of non-time-index dimensions in the time series.
         temporal_features (int): Number of non-time-index temporal features (e.g. day of week, hour of day).
         temporal_latent_features (int): The number of latent features to be learned from the input features.
         lookback (int): The number of previous time steps to consider for prediction.
@@ -37,6 +37,7 @@ class PDETime(nn.Module):
                  patch_length,
                  MLP_hidden_layers,
                  MLP_hidden_features,
+                 regularization_strength=0.1
                  ):
         super().__init__()
         
@@ -64,7 +65,7 @@ class PDETime(nn.Module):
         self.decoder = Decoder(
             lookback=lookback,
             horizon=horizon,
-            lambda_=0.1
+            lambda_=regularization_strength
             )
     
     def forward(self, x, t, tau):
