@@ -5,7 +5,7 @@ from torch import Tensor
 import torch.utils.data
 import pandas as pd
 import numpy as np
-from src.PDETime.models.PDETime import PDETime, PDETimeLoss
+from PDETime.models.pdetime_model import PDETime, PDETimeLoss
 from src.PDETime.preprocess.dataloader import PDETimeDataset
 
 if torch.cuda.is_available():
